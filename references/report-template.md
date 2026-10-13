@@ -26,9 +26,11 @@
 | performance | 静态性能/SQL 索引 | | | |
 | observability | 关键链路指标 | | | |
 | logging | 关键错误日志 | | | |
-| business_rules | 数据库/DDL/JOIN 规则识别与执行 | | | |
+| business_rules | 业务规则1（数据库复用 / 现网变更 / JOIN 确认） | | | |
 
 将必要人工确认放在独立表，不将其当作技术豁免。没有相应变更时，business_rules 写有依据的 NA。
+
+业务规则1 的三类关卡在确认完成前一律阻断：新建表复用数据库需人工确认理由；新建或修改表需人工确认现网已实际变更；代码 SQL 出现 JOIN 需人工确认是否必须使用。`PENDING` 不允许合入（总结果 NEEDS_CONFIRMATION），人工拒绝记 `REJECTED`（总结果 BLOCKED）。
 
 ### 必须级问题清单（全部阻断）
 
@@ -58,7 +60,7 @@
 | 确认 ID/类型 | 数据库/表/查询及代码位置 | 状态 | 理由/替代方案 | 现网环境及已完成证据 | 批准人/时间 | 适用快照 |
 | --- | --- | --- | --- | --- | --- | --- |
 
-状态为 PENDING / CONFIRMED / REJECTED。每张表、每个受影响 JOIN 必须列出对应关卡，不使用笼统确认。确认依赖当前代码及目标环境，只能由有权限的人提供。
+状态为 PENDING / CONFIRMED / REJECTED。每张新表/变更表、每个出现 JOIN 的查询必须列出对应关卡，不使用笼统确认。PENDING 即阻断（不允许合入），CONFIRMED 才可放行，REJECTED 记 BLOCKED。确认依赖当前代码及目标环境，只能由有权限的人提供。
 
 ### 执行证据
 
@@ -108,7 +110,7 @@ worktree 仅预审，聚合器始终返回不允许合入；merge_result 类型�
 - reason：非空理由；NA 必须解释为何不适用。
 - evidence：非空证据引用字符串数组；UNKNOWN 可以为空，但 reason 必须说明补证需求。证据引用要能追溯到快照、代码行或可信 CI，不使用“AI 说通过”作为唯一证据。
 
-当技术检查完整且业务关卡都已登记，但人工还未确认时，business_rules 可记 PASS，confirmations 中保留 PENDING，总结果 NEEDS_CONFIRMATION。未能识别关卡则记 UNKNOWN。
+当技术检查完整且业务关卡都已登记，但人工还未确认时，business_rules 可记 PASS，confirmations 中保留 PENDING，总结果 NEEDS_CONFIRMATION（阻断，不允许合入）；人工拒绝记 REJECTED，总结果 BLOCKED。未能识别关卡则记 UNKNOWN。
 
 ### confirmations 数组项
 
@@ -191,7 +193,7 @@ rule 缺失、不在上表、或与 category 不一致时报告无效。已确�
 - 引入严重 bug、IDOR、未参数化 SQL：对应检查 FAIL，BLOCKED。
 - 有 SQL 但无可用索引：performance FAIL，BLOCKED；缺索引定义则 UNKNOWN。
 - 关键链路没有指标，或关键错误只有模糊日志：对应检查 FAIL，BLOCKED。
-- 新表复用数据库未解释、现网 DDL 未完成、JOIN 未确认：NEEDS_CONFIRMATION；其余技术问题仍可导致更强阻断。
+- 新建表复用数据库未确认理由、新建/修改表现网变更未确认完成、代码 SQL 出现 JOIN 未确认为必须：NEEDS_CONFIRMATION（阻断，不允许合入）；人工拒绝记 REJECTED → BLOCKED；其余技术问题仍可导致更强阻断。
 - 指标或日志冗余但无其他问题：列入 recommendations 的 METRIC_REDUNDANCY / LOG_REDUNDANCY，decision 仍为 PASS。
 - 低风险、等级低或与本次变更无关的小问题：不写入任何清单，不因它们阻断。
 - 把必须级问题写成 recommendations、或填写非必须/非推荐的 rule：INVALID_REPORT。
