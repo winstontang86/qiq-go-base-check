@@ -1,0 +1,81 @@
+{
+  "schema_version": 1,
+  "scope": {
+    "target_ref": "origin/main",
+    "target_sha": "1111111111111111111111111111111111111111",
+    "head_sha": "7777777777777777777777777777777777777777",
+    "merge_base_sha": "3333333333333333333333333333333333333333",
+    "reviewed_at": "2026-10-13T11:00:00Z",
+    "snapshot_id": "example-invalid-001",
+    "snapshot_kind": "committed",
+    "target_verified": true,
+    "integration_risk": false,
+    "merge_result_verified": false
+  },
+  "checks": [
+    {
+      "id": "build",
+      "status": "PASS",
+      "reason": "受影响服务构建通过",
+      "evidence": ["go build ./... 退出码 0"]
+    },
+    {
+      "id": "tests",
+      "status": "PASS",
+      "reason": "受影响模块单测通过",
+      "evidence": ["go test ./... 退出码 0"]
+    },
+    {
+      "id": "logic",
+      "status": "PASS",
+      "reason": "逻辑复核未发现已确认 bug",
+      "evidence": ["service/order/refund.go:120-186 复核"]
+    },
+    {
+      "id": "security",
+      "status": "PASS",
+      "reason": "安全边界复核通过",
+      "evidence": ["service/order/refund.go:64 鉴权中间件"]
+    },
+    {
+      "id": "performance",
+      "status": "NA",
+      "reason": "本次变更未涉及 SQL、ORM 或表结构",
+      "evidence": ["git diff --name-status 输出不含 DAO、migration 与 schema 变更"]
+    },
+    {
+      "id": "observability",
+      "status": "PASS",
+      "reason": "关键链路指标已存在",
+      "evidence": ["metrics/order_metrics.go:11-26"]
+    },
+    {
+      "id": "logging",
+      "status": "PASS",
+      "reason": "关键错误日志包含诊断上下文",
+      "evidence": ["service/order/refund.go:171 字段化错误日志"]
+    },
+    {
+      "id": "business_rules",
+      "status": "PASS",
+      "reason": "已登记 JOIN 人工确认",
+      "evidence": ["已按 confirm-join-002 登记人工确认"]
+    }
+  ],
+  "required_confirmation_ids": ["confirm-join-002"],
+  "confirmations": [
+    {
+      "id": "confirm-join-002",
+      "type": "JOIN",
+      "status": "CONFIRMED",
+      "scope": "dao/order_dao.go:64-80 新增 orders JOIN users 查询",
+      "reason": "业务方确认必须使用 JOIN 且无更优替代方案",
+      "snapshot_id": "example-older-snapshot-000",
+      "evidence": ["历史审批记录 example-approval/2048"],
+      "approved_by": "example-owner",
+      "confirmed_at": "2026-10-12T12:00:00Z"
+    }
+  ],
+  "findings": [],
+  "warnings": []
+}

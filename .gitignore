@@ -1,0 +1,12 @@
+# Python（scripts/build.py、unittest）
+__pycache__/
+*.pyc
+*.pyo
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+
+# Skill runtime workdir
+.qiqskills/

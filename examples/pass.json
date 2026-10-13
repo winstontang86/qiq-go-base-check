@@ -1,0 +1,69 @@
+{
+  "schema_version": 1,
+  "scope": {
+    "target_ref": "origin/main",
+    "target_sha": "1111111111111111111111111111111111111111",
+    "head_sha": "2222222222222222222222222222222222222222",
+    "merge_base_sha": "3333333333333333333333333333333333333333",
+    "reviewed_at": "2026-10-13T09:00:00Z",
+    "snapshot_id": "example-pass-001",
+    "snapshot_kind": "committed",
+    "target_verified": true,
+    "integration_risk": false,
+    "merge_result_verified": false
+  },
+  "checks": [
+    {
+      "id": "build",
+      "status": "PASS",
+      "reason": "受影响服务 order-api 在候选提交快照上构建通过",
+      "evidence": ["go build ./... @ head_sha=2222...(40), 退出码 0, CI 日志 example-ci/build/1281"]
+    },
+    {
+      "id": "tests",
+      "status": "PASS",
+      "reason": "受影响模块单测全绿，新增行为有断言覆盖",
+      "evidence": ["go test ./service/order/... @ head_sha=2222...(40), 退出码 0", "新增用例 TestApplyRefund_Idempotent 断言重复退款不重复扣减"]
+    },
+    {
+      "id": "logic",
+      "status": "PASS",
+      "reason": "审查退款状态机与并发路径，未发现已确认 bug 或无法排除的严重风险",
+      "evidence": ["service/order/refund.go:120-186 状态迁移与锁顺序复核", "worker/refund_worker.go:44-71 幂等键复核"]
+    },
+    {
+      "id": "security",
+      "status": "PASS",
+      "reason": "新增接口沿用既有鉴权中间件，参数化 SQL，无越权与注入路径",
+      "evidence": ["service/order/refund.go:64 使用 authz.RequireTenant 中间件", "dao/order_dao.go:88 使用占位符参数绑定"]
+    },
+    {
+      "id": "performance",
+      "status": "PASS",
+      "reason": "受影响查询命中现有联合索引，无新增慢查询",
+      "evidence": ["dao/order_dao.go:96 查询条件 (tenant_id, order_no) 命中 uk_tenant_order", "EXPLAIN 记录 example-ci/perf/refund-query.txt"]
+    },
+    {
+      "id": "observability",
+      "status": "PASS",
+      "reason": "关键链路退款成功率与耗时指标已补齐",
+      "evidence": ["metrics/refund_metrics.go:18-33 注册 refund_success_total 与 refund_latency_ms"]
+    },
+    {
+      "id": "logging",
+      "status": "PASS",
+      "reason": "关键错误日志包含 tenant_id、order_no、幂等键等诊断上下文",
+      "evidence": ["service/order/refund.go:171 字段化错误日志含 tenant_id/order_no/request_id"]
+    },
+    {
+      "id": "business_rules",
+      "status": "PASS",
+      "reason": "本次变更未新增表、未改表结构，SQL 无 JOIN，无人工确认关卡",
+      "evidence": ["git diff --name-status 输出不含 migration、DDL 与 JOIN 语句"]
+    }
+  ],
+  "required_confirmation_ids": [],
+  "confirmations": [],
+  "findings": [],
+  "warnings": []
+}

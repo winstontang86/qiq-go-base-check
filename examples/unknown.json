@@ -1,0 +1,69 @@
+{
+  "schema_version": 1,
+  "scope": {
+    "target_ref": "origin/main",
+    "target_sha": "1111111111111111111111111111111111111111",
+    "head_sha": "6666666666666666666666666666666666666666",
+    "merge_base_sha": "3333333333333333333333333333333333333333",
+    "reviewed_at": "2026-10-13T10:30:00Z",
+    "snapshot_id": "example-unknown-001",
+    "snapshot_kind": "committed",
+    "target_verified": true,
+    "integration_risk": false,
+    "merge_result_verified": false
+  },
+  "checks": [
+    {
+      "id": "build",
+      "status": "PASS",
+      "reason": "受影响服务 search-api 构建通过",
+      "evidence": ["go build ./... 退出码 0 @ head_sha=6666...(40)"]
+    },
+    {
+      "id": "tests",
+      "status": "PASS",
+      "reason": "受影响模块单测通过且新增行为有断言覆盖",
+      "evidence": ["go test ./service/search/... 退出码 0"]
+    },
+    {
+      "id": "logic",
+      "status": "PASS",
+      "reason": "查询构建逻辑复核未发现已确认 bug",
+      "evidence": ["service/search/query.go:58-104 条件拼接与转义复核"]
+    },
+    {
+      "id": "security",
+      "status": "PASS",
+      "reason": "输入按占位符绑定，无注入与越权路径",
+      "evidence": ["service/search/query.go:72 参数占位符绑定"]
+    },
+    {
+      "id": "performance",
+      "status": "UNKNOWN",
+      "reason": "受影响 SQL 的新增过滤列缺少现网表结构或执行计划证据，需补齐索引定义与 EXPLAIN 后重新审查",
+      "evidence": []
+    },
+    {
+      "id": "observability",
+      "status": "PASS",
+      "reason": "搜索链路关键指标已存在",
+      "evidence": ["metrics/search_metrics.go:9-24 search_qps 与 search_latency_ms"]
+    },
+    {
+      "id": "logging",
+      "status": "PASS",
+      "reason": "错误日志包含查询标识与租户上下文",
+      "evidence": ["service/search/query.go:96 字段化错误日志"]
+    },
+    {
+      "id": "business_rules",
+      "status": "PASS",
+      "reason": "本次变更无新表、无 DDL，SQL 无 JOIN，无人工确认关卡",
+      "evidence": ["git diff --name-status 输出不含 migration 与 JOIN 语句"]
+    }
+  ],
+  "required_confirmation_ids": [],
+  "confirmations": [],
+  "findings": [],
+  "warnings": []
+}

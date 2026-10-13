@@ -1,7 +1,7 @@
 ---
 name: qiq-go-base-check
 description: 后台仓库代码合入 main 前的八类质量门禁审查。检查受影响服务构建、受影响模块自动化测试与新增代码单测覆盖、逻辑 bug、Web 与权限安全、静态性能与 SQL 索引、关键链路可观测、关键错误日志，以及数据库复用、现网 DDL 和 SQL JOIN 人工确认。适用于 Go 后台并按仓库实际工具适配其他后台语言。触发：合入 main 前检查、后台代码 review、上线门禁、合并请求审查、qiq-go-base-check。
-version: 0.1.0
+version: 0.2.0
 ---
 
 # 后台代码合入 main 门禁
@@ -84,5 +84,21 @@ version: 0.1.0
 - `references/database-performance.md`：SQL 索引、静态性能、DDL 与 JOIN 人工确认。
 - `references/report-template.md`：人类报告、JSON 格式、退出码与门禁示例。
 - `scripts/evaluate_gate.py`：Python 3.10+ 标准库门禁聚合器，无额外依赖；不将 AI 判定伪装为确定性检测。
-- `tests/test_evaluate_gate.py`：运行 `python3 -m unittest discover -s SKILL_DIR/tests -v` 验证聚合器。
+- `scripts/test_evaluate_gate.py`：聚合器单元测试，运行 `python3 SKILL_DIR/scripts/test_evaluate_gate.py -v`。
+- `examples/`：PASS / BLOCKED / NEEDS_CONFIRMATION / UNKNOWN / INVALID_REPORT 五种样例报告，用于自我回归。
+- `scripts/build.py`：读取 SKILL.md frontmatter 的 `version` 并打包到 `dist/qiq-go-base-check-<version>.zip`。
 - 修改本 Skill 时同步 frontmatter 的语义化版本：不兼容规则升 major，新增检查能力升 minor，修复和澄清升 patch。
+
+### 自我回归
+
+修改聚合器、样例报告或报告模板后，在 Skill 目录下执行并核对结果：
+
+| 命令 | 期望 |
+| --- | --- |
+| `python3 scripts/test_evaluate_gate.py` | 全部用例通过 |
+| `python3 scripts/evaluate_gate.py examples/pass.json` | 退出码 0，decision `PASS` |
+| `python3 scripts/evaluate_gate.py examples/blocked.json` | 退出码 1，decision `BLOCKED` |
+| `python3 scripts/evaluate_gate.py examples/needs-confirmation.json` | 退出码 2，decision `NEEDS_CONFIRMATION` |
+| `python3 scripts/evaluate_gate.py examples/unknown.json` | 退出码 3，decision `UNKNOWN` |
+| `python3 scripts/evaluate_gate.py examples/invalid.json` | 退出码 4，decision `INVALID_REPORT` |
+| `python3 scripts/build.py` | 生成 `dist/qiq-go-base-check-<version>.zip` |
