@@ -15,7 +15,7 @@ SPEC.loader.exec_module(gate)
 
 def sample_report():
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "scope": {
             "target_ref": "origin/main", "target_sha": "a" * 40,
             "head_sha": "b" * 40, "merge_base_sha": "c" * 40,
@@ -29,7 +29,7 @@ def sample_report():
             for category in gate.CATEGORIES
         ],
         "required_confirmation_ids": [], "confirmations": [],
-        "findings": [], "warnings": [],
+        "findings": [], "recommendations": [],
     }
 
 
@@ -40,6 +40,23 @@ def confirmation(status="PENDING", kind="JOIN"):
         "snapshot_id": "review-001", "approved_by": "reviewer",
         "confirmed_at": "2026-10-12T11:00:00Z", "environment": "production",
         "evidence": ["Scoped approval and verified change record"],
+    }
+
+
+def finding(rule="SECURITY_VULNERABILITY", category="security", identifier="F1"):
+    return {
+        "id": identifier, "category": category, "severity": "HIGH", "rule": rule,
+        "summary": "Confirmed rule violation",
+        "evidence": ["Matched snapshot and source evidence"],
+    }
+
+
+def recommendation(rule="METRIC_REDUNDANCY", category="observability", identifier="R1"):
+    return {
+        "id": identifier, "category": category, "rule": rule,
+        "summary": "Redundant metric definition",
+        "evidence": ["metrics/order_metrics.go:18"],
+        "suggestion": "Merge duplicate counters into one",
     }
 
 
@@ -118,9 +135,46 @@ class EvaluateGateTests(unittest.TestCase):
         self.report["checks"][0].update(status="NA", reason="Documentation-only change")
         self.assertTrue(gate.evaluate(self.report)["allow_merge"])
 
-    def test_warnings_do_not_block(self):
-        self.report["warnings"] = ["Reduce duplicate metrics and verbose success logs"]
-        self.assertTrue(gate.evaluate(self.report)["allow_merge"])
+    def test_recommendations_are_listed_without_blocking(self):
+        self.report["recommendations"] = [
+            recommendation(),
+            recommendation("LOG_REDUNDANCY", "logging", "R2"),
+        ]
+        result = gate.evaluate(self.report)
+        self.assertEqual(result["decision"], "PASS")
+        self.assertTrue(result["allow_merge"])
+        self.assertEqual(result["recommendations"], ["R1", "R2"])
+        self.assertEqual(result["blocking_findings"], [])
+
+    def test_recommendation_rules_are_restricted(self):
+        for rule, category in (("GENERAL", "logic"), ("BUILD_FAILURE", "build"),
+                               ("NO_USABLE_SQL_INDEX", "performance")):
+            with self.subTest(rule=rule):
+                report = copy.deepcopy(self.report)
+                report["recommendations"] = [recommendation(rule, category)]
+                with self.assertRaises(gate.InvalidReport):
+                    gate.evaluate(report)
+
+    def test_recommendation_rule_must_match_category(self):
+        self.report["recommendations"] = [recommendation("LOG_REDUNDANCY", "logic")]
+        with self.assertRaises(gate.InvalidReport):
+            gate.evaluate(self.report)
+
+    def test_recommendation_requires_summary_evidence_and_suggestion(self):
+        for field in ("summary", "evidence", "suggestion"):
+            with self.subTest(field=field):
+                report = copy.deepcopy(self.report)
+                item = recommendation()
+                del item[field]
+                report["recommendations"] = [item]
+                with self.assertRaises(gate.InvalidReport):
+                    gate.evaluate(report)
+
+    def test_issue_ids_are_unique_across_levels(self):
+        self.report["findings"] = [finding(identifier="X1")]
+        self.report["recommendations"] = [recommendation(identifier="X1")]
+        with self.assertRaises(gate.InvalidReport):
+            gate.evaluate(self.report)
 
     def test_confirmed_requires_approver_time_and_evidence(self):
         for field in ("approved_by", "confirmed_at", "evidence"):
@@ -162,44 +216,50 @@ class EvaluateGateTests(unittest.TestCase):
                                       merge_result_verified=True)
         self.assertTrue(gate.evaluate(self.report)["allow_merge"])
 
-    def test_mandatory_issues_cannot_be_marked_nonblocking(self):
-        for category, severity in (("security", "LOW"), ("logic", "HIGH"),
-                                   ("logic", "CRITICAL"), ("performance", "HIGH"),
-                                   ("performance", "CRITICAL")):
-            with self.subTest(category=category, severity=severity):
-                report = copy.deepcopy(self.report)
-                report["findings"] = [{
-                    "id": "F1", "category": category, "severity": severity,
-                    "blocking": False, "rule": "GENERAL", "summary": "Confirmed affected issue",
-                    "evidence": ["Source location and affected execution path"],
-                }]
-                self.assertEqual(gate.evaluate(report)["decision"], "BLOCKED")
-
-    def test_low_risk_logic_finding_does_not_block(self):
-        self.report["findings"] = [{
-            "id": "F1", "category": "logic", "severity": "LOW", "blocking": False,
-            "rule": "GENERAL", "summary": "Low risk issue", "evidence": ["Scoped review evidence"],
-        }]
-        self.assertTrue(gate.evaluate(self.report)["allow_merge"])
-
-    def test_explicit_hard_rules_cannot_be_marked_nonblocking(self):
+    def test_every_mandatory_rule_blocks(self):
         for rule, category in gate.MANDATORY_RULES.items():
             with self.subTest(rule=rule):
                 report = sample_report()
-                report["findings"] = [{
-                    "id": "F1", "category": category, "severity": "LOW",
-                    "blocking": False, "rule": rule, "summary": "Confirmed rule violation",
-                    "evidence": ["Matched snapshot and source evidence"],
-                }]
-                self.assertEqual(gate.evaluate(report)["decision"], "BLOCKED")
+                report["findings"] = [finding(rule, category)]
+                result = gate.evaluate(report)
+                self.assertEqual(result["decision"], "BLOCKED")
+                self.assertEqual(result["blocking_findings"], ["F1"])
 
-    def test_wrong_rule_category_is_invalid(self):
-        self.report["findings"] = [{
-            "id": "F1", "category": "logging", "severity": "LOW", "blocking": False,
-            "rule": "NO_USABLE_SQL_INDEX", "summary": "Mismatch", "evidence": ["Evidence"],
-        }]
+    def test_medium_severity_finding_still_blocks(self):
+        item = finding()
+        item["severity"] = "MEDIUM"
+        self.report["findings"] = [item]
+        self.assertEqual(gate.evaluate(self.report)["decision"], "BLOCKED")
+
+    def test_findings_require_mandatory_rule(self):
+        for rule in ("GENERAL", "METRIC_REDUNDANCY", "UNKNOWN_RULE"):
+            with self.subTest(rule=rule):
+                report = copy.deepcopy(self.report)
+                report["findings"] = [finding(rule, "observability")]
+                with self.assertRaises(gate.InvalidReport):
+                    gate.evaluate(report)
+
+    def test_finding_rule_must_match_category(self):
+        self.report["findings"] = [finding("NO_USABLE_SQL_INDEX", "logging")]
         with self.assertRaises(gate.InvalidReport):
             gate.evaluate(self.report)
+
+    def test_low_risk_severity_is_not_reportable(self):
+        item = finding()
+        item["severity"] = "LOW"
+        self.report["findings"] = [item]
+        with self.assertRaises(gate.InvalidReport):
+            gate.evaluate(self.report)
+
+    def test_finding_requires_summary_and_evidence(self):
+        for field in ("summary", "evidence"):
+            with self.subTest(field=field):
+                report = copy.deepcopy(self.report)
+                item = finding()
+                del item[field]
+                report["findings"] = [item]
+                with self.assertRaises(gate.InvalidReport):
+                    gate.evaluate(report)
 
     def test_invalid_or_unzoned_timestamps_are_rejected(self):
         for value in ("not-a-time", "2026-02-30T10:00:00Z", "2026-10-12T10:00:00"):

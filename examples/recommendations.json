@@ -1,0 +1,86 @@
+{
+  "schema_version": 2,
+  "scope": {
+    "target_ref": "origin/main",
+    "target_sha": "1111111111111111111111111111111111111111",
+    "head_sha": "8888888888888888888888888888888888888888",
+    "merge_base_sha": "3333333333333333333333333333333333333333",
+    "reviewed_at": "2026-10-13T12:00:00Z",
+    "snapshot_id": "example-recommendations-001",
+    "snapshot_kind": "committed",
+    "target_verified": true,
+    "integration_risk": false,
+    "merge_result_verified": false
+  },
+  "checks": [
+    {
+      "id": "build",
+      "status": "PASS",
+      "reason": "受影响服务 payment-api 构建通过",
+      "evidence": ["go build ./... 退出码 0 @ head_sha=8888...(40)"]
+    },
+    {
+      "id": "tests",
+      "status": "PASS",
+      "reason": "受影响模块单测通过且新增行为有断言覆盖",
+      "evidence": ["go test ./service/payment/... 退出码 0", "新增用例 TestRefund_Idempotent 断言重复退款不重复扣减"]
+    },
+    {
+      "id": "logic",
+      "status": "PASS",
+      "reason": "状态机与并发路径复核未发现已确认 bug",
+      "evidence": ["service/payment/refund.go:88-140 状态迁移与锁顺序复核"]
+    },
+    {
+      "id": "security",
+      "status": "PASS",
+      "reason": "鉴权与参数绑定复核通过",
+      "evidence": ["service/payment/refund.go:64 authz.RequireTenant"]
+    },
+    {
+      "id": "performance",
+      "status": "PASS",
+      "reason": "受影响查询命中现有索引，无性能退化",
+      "evidence": ["dao/payment_dao.go:72 命中 uk_tenant_order"]
+    },
+    {
+      "id": "observability",
+      "status": "PASS",
+      "reason": "关键链路指标齐全，仅有冗余指标待精简",
+      "evidence": ["metrics/payment_metrics.go:18-33 成功率与耗时指标已注册"]
+    },
+    {
+      "id": "logging",
+      "status": "PASS",
+      "reason": "关键错误日志齐全，仅热路径成功日志偏多",
+      "evidence": ["service/payment/refund.go:132 字段化错误日志含 tenant_id/request_id"]
+    },
+    {
+      "id": "business_rules",
+      "status": "PASS",
+      "reason": "本次变更无新表、无 DDL、无 JOIN，无人工确认关卡",
+      "evidence": ["git diff --name-status 输出不含 migration 与 JOIN 语句"]
+    }
+  ],
+  "required_confirmation_ids": [],
+  "confirmations": [],
+  "findings": [],
+  "recommendations": [
+    {
+      "id": "R1",
+      "category": "observability",
+      "rule": "METRIC_REDUNDANCY",
+      "summary": "支付链路存在两个语义重复的成功计数指标",
+      "evidence": ["metrics/payment_metrics.go:18 payment_success_total", "metrics/payment_metrics.go:24 payment_ok_count"],
+      "suggestion": "保留一个计数指标，删除重复定义，减少存储与看板噪声"
+    },
+    {
+      "id": "R2",
+      "category": "logging",
+      "rule": "LOG_REDUNDANCY",
+      "summary": "退款热路径每次调用都打印成功日志",
+      "evidence": ["service/payment/refund.go:130 每次成功退款打印 info 日志"],
+      "suggestion": "改为采样或仅在状态变化时记录，必要时降级为 debug"
+    }
+  ]
+}

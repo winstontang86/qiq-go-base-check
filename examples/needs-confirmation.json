@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "scope": {
     "target_ref": "origin/main",
     "target_sha": "1111111111111111111111111111111111111111",
@@ -75,5 +75,14 @@
     }
   ],
   "findings": [],
-  "warnings": ["报表查询链路存在含义重复的慢查询统计打点，建议合并"]
+  "recommendations": [
+    {
+      "id": "R1",
+      "category": "observability",
+      "rule": "METRIC_REDUNDANCY",
+      "summary": "报表查询链路存在两个语义重复的慢查询统计打点",
+      "evidence": ["metrics/report_metrics.go:18 report_slow_query_total", "metrics/report_metrics.go:26 report_slow_query_count"],
+      "suggestion": "合并为单一打点，避免看板与告警重复"
+    }
+  ]
 }

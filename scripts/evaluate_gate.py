@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Aggregate declared review evidence; never execute repository commands."""
+"""Aggregate declared review evidence; never execute repository commands.
+
+findings 只承载必须级问题，一律阻断；recommendations 只承载推荐级问题，
+仅列出、不参与决策。低风险问题不应出现在报告中。
+"""
 
 import argparse
 import json
@@ -13,6 +17,7 @@ CATEGORIES = (
     "observability", "logging", "business_rules",
 )
 CHECK_STATUSES = {"PASS", "FAIL", "UNKNOWN", "NA"}
+FINDING_SEVERITIES = ("CRITICAL", "HIGH", "MEDIUM")
 CONFIRMATION_TYPES = {"DATABASE_REUSE", "PRODUCTION_SCHEMA", "JOIN"}
 MANDATORY_RULES = {
     "BUILD_FAILURE": "build", "TEST_FAILURE": "tests",
@@ -21,6 +26,11 @@ MANDATORY_RULES = {
     "NO_USABLE_SQL_INDEX": "performance", "SLOW_QUERY": "performance",
     "MISSING_CRITICAL_METRIC": "observability", "MISSING_ERROR_LOG": "logging",
     "MISSING_LOG_CONTEXT": "logging", "BUSINESS_RULE_VIOLATION": "business_rules",
+}
+RECOMMENDATION_RULES = {
+    "DEAD_CODE": "logic", "TEST_MAINTAINABILITY": "tests",
+    "INDEX_TUNING": "performance", "METRIC_REDUNDANCY": "observability",
+    "LOG_REDUNDANCY": "logging",
 }
 EXIT_CODES = {
     "PASS": 0, "BLOCKED": 1, "NEEDS_CONFIRMATION": 2,
@@ -64,7 +74,7 @@ def timestamp(value):
 def validate_report(report):
     require(isinstance(report, dict), "report must be an object")
     require(type(report.get("schema_version")) is int
-            and report["schema_version"] == 1, "schema_version must be 1")
+            and report["schema_version"] == 2, "schema_version must be 2")
     scope = report.get("scope")
     require(isinstance(scope, dict), "scope is required")
     for field in ("target_ref", "reviewed_at", "snapshot_id"):
@@ -137,26 +147,47 @@ def validate_report(report):
 
     findings = report.get("findings")
     require(isinstance(findings, list), "findings must be an array")
-    finding_ids = set()
+    issue_ids = set()
     for finding in findings:
         require(isinstance(finding, dict), "each finding must be an object")
         identifier = finding.get("id")
-        require(text(identifier) and identifier not in finding_ids,
+        require(text(identifier) and identifier not in issue_ids,
                 "finding id is missing or duplicated")
-        finding_ids.add(identifier)
-        require(finding.get("category") in CATEGORIES, "finding category is invalid")
-        require(finding.get("severity") in ("CRITICAL", "HIGH", "MEDIUM", "LOW"),
+        issue_ids.add(identifier)
+        category = finding.get("category")
+        require(category in CATEGORIES, "finding category is invalid")
+        require(finding.get("severity") in FINDING_SEVERITIES,
                 "finding severity is invalid")
-        require(type(finding.get("blocking")) is bool, "finding.blocking must be boolean")
         rule = finding.get("rule")
-        require(isinstance(rule, str) and (rule == "GENERAL" or rule in MANDATORY_RULES),
-                "finding rule is missing or invalid")
-        if rule != "GENERAL":
-            require(MANDATORY_RULES[rule] == finding["category"],
-                    "finding rule does not match category")
+        require(isinstance(rule, str) and rule in MANDATORY_RULES,
+                "finding rule must be a mandatory rule")
+        require(MANDATORY_RULES[rule] == category,
+                "finding rule does not match category")
         require(text(finding.get("summary")), "finding summary is required")
         require(evidence(finding.get("evidence"), True), "finding evidence is required")
-    require(evidence(report.get("warnings")), "warnings must be a string array")
+
+    recommendations = report.get("recommendations")
+    require(isinstance(recommendations, list), "recommendations must be an array")
+    for recommendation in recommendations:
+        require(isinstance(recommendation, dict),
+                "each recommendation must be an object")
+        identifier = recommendation.get("id")
+        require(text(identifier) and identifier not in issue_ids,
+                "recommendation id is missing or duplicated")
+        issue_ids.add(identifier)
+        category = recommendation.get("category")
+        require(category in CATEGORIES, "recommendation category is invalid")
+        rule = recommendation.get("rule")
+        require(isinstance(rule, str) and rule in RECOMMENDATION_RULES,
+                "recommendation rule must be a recommendation rule")
+        require(RECOMMENDATION_RULES[rule] == category,
+                "recommendation rule does not match category")
+        require(text(recommendation.get("summary")),
+                "recommendation summary is required")
+        require(evidence(recommendation.get("evidence"), True),
+                "recommendation evidence is required")
+        require(text(recommendation.get("suggestion")),
+                "recommendation suggestion is required")
     return report
 
 
@@ -164,16 +195,7 @@ def evaluate(report):
     validate_report(report)
     failed = [item["id"] for item in report["checks"] if item["status"] == "FAIL"]
     unknown = [item["id"] for item in report["checks"] if item["status"] == "UNKNOWN"]
-    blocking_findings = []
-    for item in report["findings"]:
-        mandatory = (
-            item["rule"] in MANDATORY_RULES
-            or item["category"] == "security"
-            or (item["category"] in ("logic", "performance")
-                and item["severity"] in ("CRITICAL", "HIGH"))
-        )
-        if item["blocking"] or mandatory:
-            blocking_findings.append(item["id"])
+    blocking_findings = [item["id"] for item in report["findings"]]
     scope = report["scope"]
     scope_issues = []
     if not scope["target_verified"]:
@@ -203,7 +225,7 @@ def evaluate(report):
         "blocking_findings": blocking_findings,
         "pending_confirmations": pending,
         "rejected_confirmations": rejected,
-        "warnings": report["warnings"],
+        "recommendations": [item["id"] for item in report["recommendations"]],
         "snapshot_id": scope["snapshot_id"],
     }
 

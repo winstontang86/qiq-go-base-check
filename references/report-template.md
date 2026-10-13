@@ -30,12 +30,28 @@
 
 将必要人工确认放在独立表，不将其当作技术豁免。没有相应变更时，business_rules 写有依据的 NA。
 
-### 问题清单
+### 必须级问题清单（全部阻断）
 
-| ID | 类别/严重性 | 阻断？ | 文件:行号 | 触发条件与执行路径 | 影响 | 修复建议 | 复查方式 |
+| ID | 类别/严重性 | 规则 | 文件:行号 | 触发条件与执行路径 | 影响 | 修复建议 | 复查方式 |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 
-区分已确认问题、证据缺口与非阻断建议；只将已确认且影响本次变更的漏洞/bug 写为 finding，无关存量问题放 warnings。问题引用保持精确行号；代码片段使用工具环境要求的行号引用格式。
+只写已确认、命中必须规则的构建/测试/逻辑/安全/性能/可观测/日志/业务规则问题，每条都要给出证据与精确行号。必须级问题一律阻断，不允许标记为非阻断。
+
+### 推荐级问题清单（列出，不阻断）
+
+| ID | 类别 | 规则 | 文件:行号 | 现状 | 建议 | 证据 |
+| --- | --- | --- | --- | --- | --- | --- |
+
+只写命中推荐规则、有具体证据且在本次变更影响范围内的改进项。推荐级只作为改进建议列出，不参与决策，也不能用来替代必须级问题。
+
+### 不写入报告的问题
+
+- 等级低、风险低的问题：不写进任何清单，包括推荐级清单。
+- 只有风格、命名或格式偏好，以及没有具体证据的猜测。
+- 与本次变更无关的存量小问题（发现即忽略，不占报告篇幅）。
+- 已被必须级问题覆盖的同一问题：不得重复登记为推荐级，也不得把必须级问题降级塞进推荐清单。
+
+问题引用保持精确行号；代码片段使用工具环境要求的行号引用格式。
 
 ### 必要人工确认
 
@@ -48,11 +64,11 @@
 
 逐条记录工作目录、命令、必要参数/环境（脱敏）、工具版本、开始/结束时间、退出码、实际快照、CI 链接或本地日志引用、失败摘要。没有执行的必查项写原因及补证方式，不能伪造命令日志。
 
-### 不阻断提醒与下一步
+### 下一步
 
-列出重复/高基数指标精简、热路径冗余日志精简及低风险建议；列出阻断解除所需的具体步骤。声明当前 Skill 没有替仓库配置 CI/分支保护，不能单独禁止 Git 合并。
+列出阻断解除所需的具体步骤、需要补齐的证据与需要完成的人工确认。声明当前 Skill 没有替仓库配置 CI/分支保护，不能单独禁止 Git 合并。
 
-## JSON 输入格式（schema_version = 1）
+## JSON 输入格式（schema_version = 2）
 
 使用以下字段生成真实审查报告，不将此说明中的占位内容当证据。
 
@@ -60,13 +76,15 @@
 
 | 字段 | 类型/要求 |
 | --- | --- |
-| schema_version | 整数 1 |
+| schema_version | 整数 2 |
 | scope | 下表定义的审查快照对象 |
 | checks | 恰好覆盖八个 ID，无缺失或重复 |
 | required_confirmation_ids | 必要人工确认 ID 数组，无确认时为空；必须与 confirmations 精确对应 |
 | confirmations | 下述确认对象数组，无确认时为空 |
-| findings | 已确认的本次问题数组，无问题时为空 |
-| warnings | 不阻断提醒字符串数组，无提醒时为空 |
+| findings | 必须级问题数组，每条都阻断；无必须级问题时为空 |
+| recommendations | 推荐级问题数组，列出但不阻断；无推荐级问题时为空 |
+
+报告只有两级问题：必须级全部阻断，推荐级只列出、不阻断；等级低/风险低的问题不写入报告。
 
 ### scope
 
@@ -106,19 +124,18 @@ worktree 仅预审，聚合器始终返回不允许合入；merge_result 类型�
 
 脚本不验证“现网已经改表”是否真实。审查者必须核实相应证据，不可将计划任务等填写为已完成。缺批准人/证据/环境或已确认快照不匹配均是无效报告。
 
-### findings 数组项
+### findings 数组项（必须级，全部阻断）
 
-- id：唯一非空问题 ID。
+- id：唯一非空问题 ID，不得与任何 recommendation 的 id 重复。
 - category：八类 ID 之一。
-- severity：CRITICAL / HIGH / MEDIUM / LOW。
-- blocking：布尔。
-- rule：问题类型；必须阻断的类型见下文，普通低风险建议填写 GENERAL，不能将硬门禁问题伪装为 GENERAL。
+- severity：CRITICAL / HIGH / MEDIUM；LOW 属于低风险问题，不写入报告。
+- rule：必须规则 ID，见下表；必须与 category 一致。
 - summary：非空问题摘要。
 - evidence：非空证据引用数组，包含位置、路径和影响。
 
-已确认 security 问题、CRITICAL/HIGH 的 logic/performance 问题以及以下显式硬门禁问题，即使 blocking 错填 false 也强制阻断。必须阻断的问题同时在相应 check 记录 FAIL；若误写 PASS，聚合器仍根据 finding 阻断。不允许把无索引、缺单测等仅写作非阻断 warning。
+findings 中每一条都是必须级、都会阻断，不存在“非阻断 finding”，也没有 GENERAL 兜底类别。必须级问题同时在相应 check 记录 FAIL；若误写 PASS，聚合器仍根据 finding 阻断。不允许把无索引、缺单测、严重 bug 等必须级问题写进 recommendations。
 
-| rule | category |
+| 必须规则 rule | category |
 | --- | --- |
 | BUILD_FAILURE | build |
 | TEST_FAILURE / MISSING_UNIT_COVERAGE | tests |
@@ -129,11 +146,30 @@ worktree 仅预审，聚合器始终返回不允许合入；merge_result 类型�
 | MISSING_ERROR_LOG / MISSING_LOG_CONTEXT | logging |
 | BUSINESS_RULE_VIOLATION | business_rules |
 
-rule 与 category 不一致或未提供合法 rule 时报告无效。GENERAL 仅用于不属于上述硬门禁的普通建议；单纯指标/日志冗余放 warnings。
+rule 缺失、不在上表、或与 category 不一致时报告无效。已确认 security 问题只能走 SECURITY_VULNERABILITY，不能降级到推荐级。
+
+### recommendations 数组项（推荐级，列出不阻断）
+
+- id：唯一非空问题 ID，不得与任何 finding 的 id 重复。
+- category：八类 ID 之一。
+- rule：推荐规则 ID，见下表；必须与 category 一致。
+- summary：非空现状描述。
+- evidence：非空证据引用数组，包含位置与路径。
+- suggestion：非空改进建议。
+
+推荐级只作为改进建议列出，不参与决策、不影响退出码，也不能替代必须级问题或充当豁免依据。LOW 等级问题、风格/命名偏好、没有具体证据的猜测、与本次变更无关的存量小问题，不写入任何清单（包括推荐级清单）。
+
+| 推荐规则 rule | category | 含义 |
+| --- | --- | --- |
+| DEAD_CODE | logic | 未使用代码、不可达分支、注释掉的实现 |
+| TEST_MAINTAINABILITY | tests | 用例重复、可参数化、断言可加强（不替代覆盖缺口） |
+| INDEX_TUNING | performance | 索引精简、覆盖列调整等非阻断建议（不替代缺索引结论） |
+| METRIC_REDUNDANCY | observability | 重复、高基数或低价值指标 |
+| LOG_REDUNDANCY | logging | 热路径冗余日志或低价值日志 |
 
 ## 聚合器运行与结果
 
-执行 `python3 SKILL_DIR/scripts/evaluate_gate.py REPORT.json`，stdout 输出单个 JSON，包含 decision、allow_merge、failed_checks、unknown_checks、scope_issues、blocking_findings、pending_confirmations、rejected_confirmations、warnings 和 snapshot_id。报告无效时仅输出无效结果与脱敏错误。
+执行 `python3 SKILL_DIR/scripts/evaluate_gate.py REPORT.json`，stdout 输出单个 JSON，包含 decision、allow_merge、failed_checks、unknown_checks、scope_issues、blocking_findings、pending_confirmations、rejected_confirmations、recommendations 和 snapshot_id。报告无效时仅输出无效结果与脱敏错误。
 
 | 决策 | 退出码 | 合入 |
 | --- | --- | --- |
@@ -143,7 +179,7 @@ rule 与 category 不一致或未提供合法 rule 时报告无效。GENERAL 仅
 | UNKNOWN | 3 | 禁止，补足必查证据 |
 | INVALID_REPORT | 4 | 禁止，修正报告格式或过期确认 |
 
-优先级：报告不可解析/格式不符先返回 INVALID_REPORT；合法报告内 FAIL/阻断 finding/REJECTED 优先于 UNKNOWN，UNKNOWN 优先于待确认，最后才 PASS。提醒不会阻断。
+优先级：报告不可解析/格式不符先返回 INVALID_REPORT；合法报告内 FAIL/必须级 finding/REJECTED 优先于 UNKNOWN，UNKNOWN 优先于待确认，最后才 PASS。推荐级只出现在 recommendations 中，永远不阻断、不影响决策。
 
 聚合器只校验结构与聚合声明，不能独立证明编译、测试、索引、AI review 或人工身份真实有效。可信 CI 接入时由受保护的审查流程生成报告，校验当前候选/目标 SHA 和审批来源，再要求本检查退出码为 0；不要允许 PR 修改报告或审查脚本来获得通过。未经单独请求不实施 CI/分支保护配置。
 
@@ -156,5 +192,7 @@ rule 与 category 不一致或未提供合法 rule 时报告无效。GENERAL 仅
 - 有 SQL 但无可用索引：performance FAIL，BLOCKED；缺索引定义则 UNKNOWN。
 - 关键链路没有指标，或关键错误只有模糊日志：对应检查 FAIL，BLOCKED。
 - 新表复用数据库未解释、现网 DDL 未完成、JOIN 未确认：NEEDS_CONFIRMATION；其余技术问题仍可导致更强阻断。
-- 指标或日志冗余但无其他问题：warnings，不因冗余本身阻断。
+- 指标或日志冗余但无其他问题：列入 recommendations 的 METRIC_REDUNDANCY / LOG_REDUNDANCY，decision 仍为 PASS。
+- 低风险、等级低或与本次变更无关的小问题：不写入任何清单，不因它们阻断。
+- 把必须级问题写成 recommendations、或填写非必须/非推荐的 rule：INVALID_REPORT。
 - 代码/目标或确认快照变化：重新审查，不能沿用旧 PASS。

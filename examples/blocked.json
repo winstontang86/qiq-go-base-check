@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "scope": {
     "target_ref": "origin/main",
     "target_sha": "1111111111111111111111111111111111111111",
@@ -69,7 +69,6 @@
       "id": "F1",
       "category": "build",
       "severity": "CRITICAL",
-      "blocking": true,
       "rule": "BUILD_FAILURE",
       "summary": "order-api 编译失败，无法构建候选产物",
       "evidence": ["service/order/refund.go:141 未定义标识符 ErrRefundClosed", "CI 日志 example-ci/build/1290 退出码 1"]
@@ -78,11 +77,19 @@
       "id": "F2",
       "category": "logic",
       "severity": "HIGH",
-      "blocking": true,
       "rule": "SEVERE_LOGIC_BUG",
       "summary": "退款重试缺少幂等保护，可能重复扣减用户余额",
       "evidence": ["service/order/refund.go:120-186 无既有退款单校验", "worker/refund_worker.go:44-71 重试路径重复调用扣减"]
     }
   ],
-  "warnings": ["退款链路存在两处含义重复的计数器，建议合并精简"]
+  "recommendations": [
+    {
+      "id": "R1",
+      "category": "observability",
+      "rule": "METRIC_REDUNDANCY",
+      "summary": "退款链路存在两个语义重复的成功计数指标",
+      "evidence": ["metrics/refund_metrics.go:18 refund_success_total", "metrics/refund_metrics.go:24 refund_ok_count"],
+      "suggestion": "保留单个计数指标，删除另一个，减少存储与看板噪声"
+    }
+  ]
 }
