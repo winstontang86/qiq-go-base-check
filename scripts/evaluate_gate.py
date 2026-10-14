@@ -18,7 +18,7 @@ CATEGORIES = (
 )
 CHECK_STATUSES = {"PASS", "FAIL", "UNKNOWN", "NA"}
 FINDING_SEVERITIES = ("CRITICAL", "HIGH", "MEDIUM")
-CONFIRMATION_TYPES = {"DATABASE_REUSE", "PRODUCTION_SCHEMA", "JOIN"}
+CONFIRMATION_TYPES = {"DATABASE_REUSE", "PRODUCTION_SCHEMA", "PRODUCTION_DATA_WRITE", "JOIN"}
 MANDATORY_RULES = {
     "BUILD_FAILURE": "build", "TEST_FAILURE": "tests",
     "MISSING_UNIT_COVERAGE": "tests", "SEVERE_LOGIC_BUG": "logic",
@@ -139,9 +139,9 @@ def validate_report(report):
                     "confirmation.confirmed_at must be a zoned ISO timestamp")
             require(confirmation["snapshot_id"] == scope["snapshot_id"],
                     "confirmation snapshot does not match review snapshot")
-            if confirmation["type"] == "PRODUCTION_SCHEMA":
+            if confirmation["type"] in ("PRODUCTION_SCHEMA", "PRODUCTION_DATA_WRITE"):
                 require(text(confirmation.get("environment")),
-                        "production schema confirmation requires environment")
+                        "production confirmation requires environment")
     require(confirmation_ids == set(required_ids),
             "confirmations must exactly match required_confirmation_ids")
 

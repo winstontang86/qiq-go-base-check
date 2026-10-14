@@ -26,11 +26,11 @@
 | performance | 静态性能/SQL 索引 | | | |
 | observability | 关键链路指标 | | | |
 | logging | 关键错误日志 | | | |
-| business_rules | 业务规则1（数据库复用 / 现网变更 / JOIN 确认） | | | |
+| business_rules | 业务规则1/2（数据库复用 / 现网变更 / .sql 库表变更与数据写入 / JOIN 确认） | | | |
 
 将必要人工确认放在独立表，不将其当作技术豁免。没有相应变更时，business_rules 写有依据的 NA。
 
-业务规则1 的三类关卡在确认完成前一律阻断：新建表复用数据库需人工确认理由；新建或修改表需人工确认现网已实际变更；代码 SQL 出现 JOIN 需人工确认是否必须使用。`PENDING` 不允许合入（总结果 NEEDS_CONFIRMATION），人工拒绝记 `REJECTED`（总结果 BLOCKED）。
+业务规则1/2 的四类关卡在确认完成前一律阻断：新建表复用数据库需人工确认理由；新建或修改表、变更文件中 `.sql` 的库表结构语句需人工确认现网已实际变更；变更文件中 `.sql` 的插入数据需人工确认已写入现网；代码 SQL 出现 JOIN 需人工确认是否必须使用。`PENDING` 不允许合入（总结果 NEEDS_CONFIRMATION），人工拒绝记 `REJECTED`（总结果 BLOCKED）。
 
 ### 必须级问题清单（全部阻断）
 
@@ -60,7 +60,7 @@
 | 确认 ID/类型 | 数据库/表/查询及代码位置 | 状态 | 理由/替代方案 | 现网环境及已完成证据 | 批准人/时间 | 适用快照 |
 | --- | --- | --- | --- | --- | --- | --- |
 
-状态为 PENDING / CONFIRMED / REJECTED。每张新表/变更表、每个出现 JOIN 的查询必须列出对应关卡，不使用笼统确认。PENDING 即阻断（不允许合入），CONFIRMED 才可放行，REJECTED 记 BLOCKED。确认依赖当前代码及目标环境，只能由有权限的人提供。
+状态为 PENDING / CONFIRMED / REJECTED。每张新表/变更表、每个变更的 `.sql`（库表结构语句或插入数据）、每个出现 JOIN 的查询必须列出对应关卡，不使用笼统确认。PENDING 即阻断（不允许合入），CONFIRMED 才可放行，REJECTED 记 BLOCKED。确认依赖当前代码及目标环境，只能由有权限的人提供。
 
 ### 执行证据
 
@@ -115,14 +115,14 @@ worktree 仅预审，聚合器始终返回不允许合入；merge_result 类型�
 ### confirmations 数组项
 
 - id：唯一非空确认 ID。
-- type：DATABASE_REUSE / PRODUCTION_SCHEMA / JOIN。
+- type：DATABASE_REUSE / PRODUCTION_SCHEMA / PRODUCTION_DATA_WRITE / JOIN。
 - status：PENDING / CONFIRMED / REJECTED。
-- scope：非空，精确数据库/表/变更项或代码查询位置。
-- reason：非空复用理由、JOIN 必要性/替代方案或现网完成说明。
+- scope：非空，精确数据库/表/变更项（`.sql` 变更含 `文件:行号`）、数据范围或代码查询位置。
+- reason：非空复用理由、JOIN 必要性/替代方案或现网完成说明（`.sql` 变更含库/表、数据范围或影响行数）。
 - snapshot_id：非空关联快照；CONFIRMED 必须与本报告 scope.snapshot_id 一致。
 - evidence：证据引用字符串数组；CONFIRMED 必须非空。
 - approved_by / confirmed_at：CONFIRMED 必填非空批准人及有效 ISO 8601 时间（带时区和秒），使用真实人工身份与时间。
-- environment：PRODUCTION_SCHEMA 且 CONFIRMED 必填精确现网环境。
+- environment：PRODUCTION_SCHEMA 或 PRODUCTION_DATA_WRITE 且 CONFIRMED 必填精确现网环境。
 
 脚本不验证“现网已经改表”是否真实。审查者必须核实相应证据，不可将计划任务等填写为已完成。缺批准人/证据/环境或已确认快照不匹配均是无效报告。
 
@@ -194,6 +194,8 @@ rule 缺失、不在上表、或与 category 不一致时报告无效。已确�
 - 有 SQL 但无可用索引：performance FAIL，BLOCKED；缺索引定义则 UNKNOWN。
 - 关键链路没有指标，或关键错误只有模糊日志：对应检查 FAIL，BLOCKED。
 - 新建表复用数据库未确认理由、新建/修改表现网变更未确认完成、代码 SQL 出现 JOIN 未确认为必须：NEEDS_CONFIRMATION（阻断，不允许合入）；人工拒绝记 REJECTED → BLOCKED；其余技术问题仍可导致更强阻断。
+- 变更文件中的 `.sql` 含 `CREATE`/`ALTER`/`DROP`/`RENAME TABLE`：登记 PRODUCTION_SCHEMA，NEEDS_CONFIRMATION；含 `INSERT INTO`/`REPLACE INTO`：登记 PRODUCTION_DATA_WRITE，NEEDS_CONFIRMATION，确认完成前均不放行。
+- `.sql` 已命中但内容无法核对（diff/文件/库表范围不可确定）：business_rules UNKNOWN，阻断，不允许合入。
 - 指标或日志冗余但无其他问题：列入 recommendations 的 METRIC_REDUNDANCY / LOG_REDUNDANCY，decision 仍为 PASS。
 - 低风险、等级低或与本次变更无关的小问题：不写入任何清单，不因它们阻断。
 - 把必须级问题写成 recommendations、或填写非必须/非推荐的 rule：INVALID_REPORT。

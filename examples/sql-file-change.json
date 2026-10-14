@@ -1,0 +1,92 @@
+{
+  "schema_version": 2,
+  "scope": {
+    "target_ref": "origin/main",
+    "target_sha": "1111111111111111111111111111111111111111",
+    "head_sha": "6666666666666666666666666666666666666666",
+    "merge_base_sha": "3333333333333333333333333333333333333333",
+    "reviewed_at": "2026-10-14T10:00:00Z",
+    "snapshot_id": "example-sql-file-change-001",
+    "snapshot_kind": "committed",
+    "target_verified": true,
+    "integration_risk": true,
+    "merge_result_verified": true
+  },
+  "checks": [
+    {
+      "id": "build",
+      "status": "PASS",
+      "reason": "受影响服务 agentserver 与 chat 构建通过",
+      "evidence": ["go build ./... 退出码 0 @ head_sha=6666...(40)"]
+    },
+    {
+      "id": "tests",
+      "status": "PASS",
+      "reason": "受影响模块单测通过，新增字段读写有断言覆盖",
+      "evidence": ["go test ./service/chat/... 退出码 0", "新增用例 TestConversationTitleFallback 断言回退分支"]
+    },
+    {
+      "id": "logic",
+      "status": "PASS",
+      "reason": "标题回退逻辑复核未发现已确认 bug",
+      "evidence": ["service/chat/conversation.go:88-120 空标题回退与去重逻辑复核"]
+    },
+    {
+      "id": "security",
+      "status": "PASS",
+      "reason": "接口按会话归属校验，无越权读写",
+      "evidence": ["handler/conversation.go:64 校验 uid 与会话归属后再更新"]
+    },
+    {
+      "id": "performance",
+      "status": "PASS",
+      "reason": "新增列不参与查询条件，读取路径仍命中主键索引",
+      "evidence": ["ALTER TABLE 未新增查询谓词", "EXPLAIN 记录 example-ci/perf/conv-title.txt"]
+    },
+    {
+      "id": "observability",
+      "status": "PASS",
+      "reason": "会话标题写入失败已有计数指标",
+      "evidence": ["metrics/chat_metrics.go:31-38 conversation_title_write_failed_total"]
+    },
+    {
+      "id": "logging",
+      "status": "PASS",
+      "reason": "写入失败日志包含 conversation_id 与错误原因",
+      "evidence": ["service/chat/conversation.go:114 字段化错误日志含 conversation_id/uid"]
+    },
+    {
+      "id": "business_rules",
+      "status": "PASS",
+      "reason": "本次变更含 .sql 库表结构语句与插入数据语句，已按业务规则2登记两条人工确认",
+      "evidence": [
+        "git diff 新增 deploy/sql/scheme/chat/V2026.10.14_001__buddy_title_column.sql:12 ALTER TABLE ... ADD COLUMN",
+        "git diff 新增 deploy/sql/data/chat/V2026.10.14_002__seed_title_template.sql:5 INSERT INTO ... VALUES",
+        "已按 confirm-schema-001 与 confirm-data-write-001 登记人工确认"
+      ]
+    }
+  ],
+  "required_confirmation_ids": ["confirm-schema-001", "confirm-data-write-001"],
+  "confirmations": [
+    {
+      "id": "confirm-schema-001",
+      "type": "PRODUCTION_SCHEMA",
+      "status": "PENDING",
+      "scope": "deploy/sql/scheme/chat/V2026.10.14_001__buddy_title_column.sql:12-18 chat 库 t_im_buddy_as_conversation 新增 title 列与索引",
+      "reason": "需人工确认该 DDL 已在现网 chat 库实际执行完成并核验表结构",
+      "snapshot_id": "example-sql-file-change-001",
+      "evidence": ["deploy/sql/scheme/chat/V2026.10.14_001__buddy_title_column.sql:12-18 最终语句"]
+    },
+    {
+      "id": "confirm-data-write-001",
+      "type": "PRODUCTION_DATA_WRITE",
+      "status": "PENDING",
+      "scope": "deploy/sql/data/chat/V2026.10.14_002__seed_title_template.sql:5-9 chat 库 t_title_template 初始化数据 3 行",
+      "reason": "需人工确认初始化数据已写入现网 chat 库并提供影响行数与执行回执",
+      "snapshot_id": "example-sql-file-change-001",
+      "evidence": ["deploy/sql/data/chat/V2026.10.14_002__seed_title_template.sql:5-9 最终语句"]
+    }
+  ],
+  "findings": [],
+  "recommendations": []
+}

@@ -187,11 +187,19 @@ class EvaluateGateTests(unittest.TestCase):
                 with self.assertRaises(gate.InvalidReport):
                     gate.evaluate(report)
 
-    def test_production_schema_requires_environment(self):
-        item = self.add_confirmation("CONFIRMED", "PRODUCTION_SCHEMA")
-        item.pop("environment")
-        with self.assertRaises(gate.InvalidReport):
-            gate.evaluate(self.report)
+    def test_production_confirmation_requires_environment(self):
+        for kind in ("PRODUCTION_SCHEMA", "PRODUCTION_DATA_WRITE"):
+            with self.subTest(kind=kind):
+                item = self.add_confirmation("CONFIRMED", kind)
+                item.pop("environment")
+                with self.assertRaises(gate.InvalidReport):
+                    gate.evaluate(self.report)
+
+    def test_data_write_confirmation_blocks_until_confirmed(self):
+        item = self.add_confirmation("PENDING", "PRODUCTION_DATA_WRITE")
+        self.assertEqual(gate.evaluate(self.report)["decision"], "NEEDS_CONFIRMATION")
+        item["status"] = "CONFIRMED"
+        self.assertEqual(gate.evaluate(self.report)["decision"], "PASS")
 
     def test_stale_confirmation_invalid(self):
         self.add_confirmation("CONFIRMED")["snapshot_id"] = "older-review"
